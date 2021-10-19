@@ -3,13 +3,19 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"os"
 	"strings"
+
+	"github.com/ahuigo/glogger"
 )
+
+var logger = glogger.Glogger
 
 //client
 func main() {
 	var err error
+	// nc -l 4600
 	hostPortPtr := flag.String("h", "127.0.0.1:4600", "write host")
 	flag.Parse()
 
@@ -20,6 +26,7 @@ func main() {
 	if len(hostPortSlice) >= 2 {
 		port = hostPortSlice[1]
 	}
+	conn, _ := createConn(host + ":" + port)
 	fileReader := os.Stdin
 	if len(tails) > 0 {
 		if tails[0] != "-" {
@@ -30,7 +37,7 @@ func main() {
 		}
 	}
 
-	println(host, port, fileReader)
+	logger.Info(host, port, fileReader)
 	// reader to tcp writer
 	for {
 		buf := make([]byte, 1000)
@@ -39,18 +46,32 @@ func main() {
 			perror(err)
 		}
 		if n > 0 {
-			println(string(buf))
-			perror(err)
-			break
+			writeToServer(conn, buf[:n])
 			// fileWriter.Write(buf)
 		} else {
 			break
 		}
 	}
+}
 
+func createConn(addr string) (conn net.Conn, err error) {
+	conn, err = net.Dial("tcp", addr)
+	if err != nil {
+		perror("Connect to TCP server failed ,err:", err)
+		return
+	}
+	return
+}
+
+func writeToServer(conn net.Conn, buf []byte) {
+	_, err := conn.Write(buf)
+	if err != nil {
+		perror("Write failed,err:", err)
+	}
 }
 
 func perror(args ...interface{}) {
-	fmt.Println(args...)
+	// fmt.Println(args...)
+	fmt.Fprintln(os.Stderr, args...)
 	os.Exit(1)
 }
