@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -28,6 +29,7 @@ type RecvFiles struct {
 	// RfStatusRecv: recv data ; EOF: close file + init
 	status RfStatus
 	fp     *os.File
+	home   string
 }
 
 type Args struct {
@@ -62,8 +64,8 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 			return false, errors.New("invalid header:" + header)
 		}
 		// finished
-		filePath := segs[1]
-		rf.fp, err = file.CreateFile(filePath)
+		fpath := filepath.Join(rf.home, segs[1])
+		rf.fp, err = file.CreateFile(fpath)
 		*b = (*b)[sepIndex+1:]
 
 		return true, err
@@ -159,12 +161,13 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 	return
 }
 
-func recvConn(conn net.Conn) {
+func recvConn(conn net.Conn, home string) {
 	defer conn.Close()
 	var buf [5]byte
 	bytes := make([]byte, 0, 1000)
 	rf := &RecvFiles{
 		status: RfStatusInit,
+		home:   home,
 	}
 	for {
 		n, err := conn.Read(buf[:])
@@ -208,6 +211,6 @@ func main() {
 		}
 
 		// 业务处理逻辑
-		go recvConn(conn)
+		go recvConn(conn, args.Home)
 	}
 }

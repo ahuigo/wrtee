@@ -48,9 +48,16 @@ func (c *Client) sendPath(path string) (err error) {
 }
 func (c *Client) sendFile(filePath string) (err error) {
 	fileReader, _ := c.openFile(filePath)
+	segLenBits := 5
+	buf := make([]byte, 10)
+
+	header := fmt.Sprintf("file:%s\n", file.GetFilename(filePath))
+	c.sendBlob([]byte(header))
+	defer func() {
+		c.sendBlob([]byte("END:"))
+	}()
 	for {
-		buf := make([]byte, 1000)
-		n, err := fileReader.Read(buf)
+		n, err := fileReader.Read(buf[segLenBits+1:])
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -58,7 +65,9 @@ func (c *Client) sendFile(filePath string) (err error) {
 			return err
 		}
 		if n > 0 {
-			writeToServer(c.conn, buf[:n])
+			segLen := fmt.Sprintf("%05d:", n)
+			copy(buf, []byte(segLen))
+			c.sendBlob(buf[:n+segLenBits+1])
 			// fileWriter.Write(buf)
 		} else {
 			break
@@ -66,6 +75,16 @@ func (c *Client) sendFile(filePath string) (err error) {
 	}
 	return
 }
+
+func (c *Client) sendBlob(buf []byte) {
+	fmt.Println("sendBlog:", string(buf))
+	conn := c.getConn()
+	_, err := conn.Write(buf)
+	if err != nil {
+		perror("Write failed,err:", err)
+	}
+}
+
 func (c *Client) openFile(filePath string) (fileReader io.Reader, err error) {
 	if filePath == "-" {
 		fileReader = os.Stdin
@@ -75,8 +94,6 @@ func (c *Client) openFile(filePath string) (fileReader io.Reader, err error) {
 			// os.Exit(1)
 		}
 	}
-	// var b *bytes.Buffer = bytes.NewBuffer([]byte("hi"))
-	// io.Copy(os.Stdout, b) // copy b to stdout
 	return
 }
 
@@ -100,13 +117,6 @@ func getCliArgs() (args Client) {
 func main() {
 	client := getCliArgs()
 	client.sendPaths()
-}
-
-func writeToServer(conn net.Conn, buf []byte) {
-	_, err := conn.Write(buf)
-	if err != nil {
-		perror("Write failed,err:", err)
-	}
 }
 
 func perror(args ...interface{}) {

@@ -4,12 +4,24 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
 func IsExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
+}
+
+func AbsPath(path string) string {
+	var err error
+	path, err = exec.LookPath(path)
+	if err != nil {
+		panic(err)
+	}
+	path, _ = filepath.Abs(path)
+
+	return filepath.Clean(path)
 }
 
 func IsDir(path string) bool {
@@ -24,8 +36,8 @@ func GetParentDir(path string) string {
 	return filepath.Dir(path)
 }
 func GetFilename(path string) string {
-	_, file := filepath.Split(path)
-	return file
+	_, filename := filepath.Split(path)
+	return filename
 }
 
 // Make path force
