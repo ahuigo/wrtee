@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # zsync
 ## zsync(client)
 
@@ -28,6 +27,7 @@ Read file stream from socket
     rtee -h 127.0.0.1:8100 -t token > data.log
 
 ## Feature
-[] Support host:port(default -h 127.0.0.1:8100)
-[] Support token check and auto token (-auto)
+[x] File sync via host:port(default -h 127.0.0.1:8100)
+[]  File check via checksum-search algorithm like rsync
+[]  Support  for  anonymous or authenticated by token
 [] Support progress bar(received length of bytes) and silence mode (-s)

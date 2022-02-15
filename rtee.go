@@ -36,7 +36,7 @@ type Args struct {
 }
 
 func getCliArgs() (args Args) {
-	portPtr := flag.String("p", "4600", "read port")
+	portPtr := flag.String("p", "8100", "read port")
 	flag.Parse()
 	// port
 	args.Port = *portPtr
@@ -59,7 +59,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 		header := string(buf[:sepIndex])
 		segs := strings.Split(header, ":")
 		if len(segs) < 2 || segs[0] != "file" {
-			return false, errors.New("bad header")
+			return false, errors.New("invalid header:" + header)
 		}
 		// finished
 		filePath := segs[1]
@@ -74,7 +74,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err error) {
 	buf := *b
 	sepIndex := bytes.IndexByte(buf, ':')
-	fmt.Println("ahui: parse file:", string(buf))
+	fmt.Println("read file with string:", string(buf))
 	if sepIndex > 0 {
 		segName := string(buf[:sepIndex])
 		segLen, err := strconv.Atoi(segName)
@@ -89,54 +89,26 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err erro
 			// write line
 			if len(buf[sepIndex+1:]) >= segLen {
 				// non-block
-				readNext = true
 				bytes := buf[sepIndex+1 : sepIndex+1+segLen]
 				file.WriteBytes(rf.fp, bytes)
 				*b = (*b)[sepIndex+1+segLen:]
-				return finished, readNext, nil
+				return finished, false, nil
 			} else {
 				// block line
-				readNext = false
-				return finished, readNext, nil
+				readNext = true
+				return finished, true, nil
 			}
 		} else {
 			// bad seg length
 			return finished, readNext, errors.New("bad body segName:" + segName)
 		}
 
-	}
-	return
-}
+	} else {
+		readNext = true
+		if len(buf) > 10 { // len(number_len|END:)<10
+			return false, false, errors.New("bad body seg:" + string(buf))
 
-func (rf *RecvFiles) Read(b *[]byte) (err error) {
-	finished := false
-	readNext := false
-	for {
-		switch rf.status {
-		case RfStatusInit:
-			fmt.Println("ahui0: parse header:", string(*b))
-			if finished, err = rf.ReadHeader(b); err != nil {
-				return err
-			}
-			if finished {
-				rf.status = RfStatusRecv
-				readNext = true
-			}
-		case RfStatusRecv:
-			fmt.Println("ahui0: parse file:", string(*b))
-			if finished, readNext, err = rf.ReadFile(b); err != nil {
-				return err
-			}
-			if finished {
-				rf.status = RfStatusInit
-			}
-		default:
-			return errors.New("undefined recv file status")
 		}
-		if !readNext {
-			break
-		}
-
 	}
 	return
 }
@@ -151,9 +123,45 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
  * length:data
  * EOF:
  */
+func (rf *RecvFiles) Read(b *[]byte) (err error) {
+	finished := false
+	readNext := false //read more byte(not enough bytes)
+	for {
+		switch rf.status {
+		case RfStatusInit:
+			fmt.Println("parse header...:", string(*b))
+			if finished, err = rf.ReadHeader(b); err != nil {
+				return err
+			}
+			if finished {
+				rf.status = RfStatusRecv
+			} else {
+				readNext = true
+			}
+		case RfStatusRecv:
+			fmt.Println("parse file...:", string(*b))
+			if finished, readNext, err = rf.ReadFile(b); err != nil {
+				return err
+			}
+			if finished {
+				rf.status = RfStatusInit
+			} else {
+				readNext = true
+			}
+		default:
+			return errors.New("undefined recv file status")
+		}
+		if readNext {
+			break
+		}
+
+	}
+	return
+}
+
 func recvConn(conn net.Conn) {
 	defer conn.Close()
-	var buf [10]byte
+	var buf [5]byte
 	bytes := make([]byte, 0, 1000)
 	rf := &RecvFiles{
 		status: RfStatusInit,
@@ -164,7 +172,7 @@ func recvConn(conn net.Conn) {
 			if err != io.EOF {
 				fmt.Println("Read from tcp server failed,err:", err)
 			} else {
-				fmt.Println("Read from tcp server end")
+				fmt.Print("Read from tcp server EOF")
 			}
 			break
 		}
