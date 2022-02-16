@@ -1,6 +1,7 @@
 package file
 
 import (
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -46,11 +47,15 @@ func MakeFileDir(filePath string) error {
 	return os.MkdirAll(fileDir, os.ModePerm)
 }
 
-func CreateFile(file string) (fp *os.File, err error) {
-	if err := MakeFileDir(file); err != nil {
+func CreateFile(filePath string, force bool) (fp *os.File, err error) {
+	if !force && IsExists(filePath) {
+		return nil, errors.New("file existed:" + filePath)
+	}
+	if err := MakeFileDir(filePath); err != nil {
 		return nil, err
 	}
-	fp, err = os.Create(file)
+	// fp, err = os.Create(file)
+	fp, err = os.OpenFile(filePath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0666)
 	// defer f.Close()
 	return
 

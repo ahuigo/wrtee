@@ -30,18 +30,23 @@ type RecvFiles struct {
 	status RfStatus
 	fp     *os.File
 	home   string
+	force  bool
 }
 
 type Args struct {
-	Port string
-	Home string //output home
+	Port  string
+	Home  string //output home
+	Force bool
 }
 
 func getCliArgs() (args Args) {
 	portPtr := flag.String("p", "8100", "read port")
+	forcePtr := flag.Bool("f", false, "force sync")
 	flag.Parse()
 	// port
 	args.Port = *portPtr
+	args.Force = *forcePtr
+	debug("force:", *forcePtr)
 
 	// dir
 	tailArgs := flag.Args()
@@ -65,7 +70,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 		}
 		// finished
 		fpath := filepath.Join(rf.home, segs[1])
-		rf.fp, err = file.CreateFile(fpath)
+		rf.fp, err = file.CreateFile(fpath, rf.force)
 		*b = (*b)[sepIndex+1:]
 
 		return true, err
@@ -161,14 +166,10 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 	return
 }
 
-func recvConn(conn net.Conn, home string) {
+func recvConn(conn net.Conn, rf *RecvFiles) {
 	defer conn.Close()
 	var buf [5]byte
 	bytes := make([]byte, 0, 1000)
-	rf := &RecvFiles{
-		status: RfStatusInit,
-		home:   home,
-	}
 	for {
 		n, err := conn.Read(buf[:])
 		if err != nil {
@@ -185,6 +186,7 @@ func recvConn(conn net.Conn, home string) {
 		fmt.Printf("Recived bytes:%s\n", string(bytes))
 		if err = rf.Read(&bytes); err != nil {
 			fmt.Printf("read err:%+v\n", err)
+			conn.Close()
 			break
 		}
 
@@ -211,6 +213,19 @@ func main() {
 		}
 
 		// 业务处理逻辑
-		go recvConn(conn, args.Home)
+		rf := &RecvFiles{
+			status: RfStatusInit,
+			home:   args.Home,
+			force:  args.Force,
+		}
+		debug("rf:", rf)
+		go recvConn(conn, rf)
 	}
+}
+
+func debug(ds ...interface{}) {
+	for _, d := range ds {
+		fmt.Printf("%#v ", d)
+	}
+	fmt.Printf("\n")
 }
