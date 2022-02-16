@@ -1,4 +1,4 @@
-//go:build rtee
+//go:build !rtee
 package main
 
 import (
@@ -46,7 +46,7 @@ func getCliArgs() (args Args) {
 	// port
 	args.Port = *portPtr
 	args.Force = *forcePtr
-	debug("force:", *forcePtr)
+	println("force:", *forcePtr)
 
 	// dir
 	tailArgs := flag.Args()
@@ -62,7 +62,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 	buf := *b
 	sepIndex := bytes.IndexByte(buf, bodyDilimiter)
 	if sepIndex > 0 {
-		fmt.Println("ahui: parse header")
+		dprintf("ahui: parse header")
 		header := string(buf[:sepIndex])
 		segs := strings.Split(header, ":")
 		if len(segs) < 2 || segs[0] != "file" {
@@ -81,7 +81,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err error) {
 	buf := *b
 	sepIndex := bytes.IndexByte(buf, ':')
-	fmt.Println("read file with string:", string(buf))
+	dprintf("read file with string:%s", string(buf))
 	if sepIndex > 0 {
 		segName := string(buf[:sepIndex])
 		segLen, err := strconv.Atoi(segName)
@@ -136,7 +136,7 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 	for {
 		switch rf.status {
 		case RfStatusInit:
-			fmt.Println("parse header...:", string(*b))
+			dprintf("parse header...:%s", string(*b))
 			if finished, err = rf.ReadHeader(b); err != nil {
 				return err
 			}
@@ -146,7 +146,7 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 				readNext = true
 			}
 		case RfStatusRecv:
-			fmt.Println("parse file...:", string(*b))
+			dprintf("parse file...:%s", string(*b))
 			if finished, readNext, err = rf.ReadFile(b); err != nil {
 				return err
 			}
@@ -168,7 +168,7 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 
 func recvConn(conn net.Conn, rf *RecvFiles) {
 	defer conn.Close()
-	var buf [5]byte
+	var buf [10000]byte
 	bytes := make([]byte, 0, 1000)
 	for {
 		n, err := conn.Read(buf[:])
@@ -181,11 +181,11 @@ func recvConn(conn net.Conn, rf *RecvFiles) {
 			break
 		}
 		data := string(buf[:n])
-		fmt.Printf("Recived from client:%s\n", data)
+		dprintf("Recived from client:%s\n", data)
 		bytes = append(bytes, buf[:n]...)
-		fmt.Printf("Recived bytes:%s\n", string(bytes))
+		dprintf("Recived bytes:%s\n", string(bytes))
 		if err = rf.Read(&bytes); err != nil {
-			fmt.Printf("read err:%+v\n", err)
+			dprintf("read err:%+v\n", err)
 			conn.Close()
 			break
 		}
@@ -223,7 +223,12 @@ func main() {
 	}
 }
 
+func dprintf(format string, ds ...interface{}) {
+    return
+	fmt.Printf(format+"\n", ds...)
+}
 func debug(ds ...interface{}) {
+    return
 	for _, d := range ds {
 		fmt.Printf("%#v ", d)
 	}

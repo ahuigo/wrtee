@@ -3,6 +3,7 @@ package file
 import (
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -69,6 +70,22 @@ func WriteFile(file string, bytes []byte) error {
 func ReadFile(file string) ([]byte, error) {
 	bytes, err := ioutil.ReadFile(file)
 	return bytes, err
+}
+
+func ReadSeek(filePath string, offset int64, n int64) ([]byte, error) {
+	fp, err := os.OpenFile(filePath, os.O_RDONLY, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := fp.Seek(offset, 0); err != nil {
+		return nil, err
+	}
+	buf := make([]byte, n)
+	if _, err := io.ReadFull(fp, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
 }
 
 /**

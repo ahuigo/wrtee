@@ -6,7 +6,7 @@ import (
 
 func TestCreateFile(t *testing.T) {
 	file := "tmp/a.txt"
-	fp, _ := CreateFile(file)
+	fp, _ := CreateFile(file, true)
 
 	WriteBytes(fp, []byte("hello"))
 	WriteBytes(fp, []byte(" world"))

@@ -49,7 +49,7 @@ func (c *Client) sendPath(path string) (err error) {
 func (c *Client) sendFile(filePath string) (err error) {
 	fileReader, _ := c.openFile(filePath)
 	segLenBits := 5
-	buf := make([]byte, 10)
+	buf := make([]byte, 2000)
 
 	header := fmt.Sprintf("file:%s\n", file.GetFilename(filePath))
 	c.sendBlob([]byte(header))
@@ -77,12 +77,16 @@ func (c *Client) sendFile(filePath string) (err error) {
 }
 
 func (c *Client) sendBlob(buf []byte) {
-	fmt.Println("sendBlog:", string(buf))
+	fmt.Println("sendBlob:", string(buf))
 	conn := c.getConn()
-	_, err := conn.Write(buf)
+	n, err := conn.Write(buf)
 	if err != nil {
 		perror("Write failed,err:", err)
-	}
+	}else{
+        if n!=len(buf){
+            perror("not valid n:", n, "len=",len(buf))
+        }
+    }
 }
 
 func (c *Client) openFile(filePath string) (fileReader io.Reader, err error) {
