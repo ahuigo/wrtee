@@ -106,7 +106,7 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err erro
 
 				// ********************debug ***************************
 				bn := int64(len(bytes))
-				oribytes, err := file.ReadSeek("src/wget", rf.recvOffset, bn)
+				oribytes, err := file.ReadSeek("tmp/wget", rf.recvOffset, bn)
 				if err != nil {
 					util.Fatalf("seek read err:%s,offset:%d,n:%d", err, rf.recvOffset, bn)
 				}
@@ -202,7 +202,9 @@ func recvConn(conn net.Conn, rf *RecvFiles) {
 		conn.Close()
 	}()
 	for {
+		util.Debugf("read bytes...")
 		n, err := conn.Read(buf[:])
+		util.Debugf("read bytes:n=%d", n)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("Read from tcp server failed,err:", err)

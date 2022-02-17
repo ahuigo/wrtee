@@ -101,6 +101,7 @@ func (c *Client) sendBlob(buf []byte) error {
 	return err
 }
 func (c *Client) waitClose() {
+	util.Perror("wait closing...")
 	conn := c.getConn()
 	buf := make([]byte, 10)
 	_, err := conn.Read(buf)
