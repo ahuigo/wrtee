@@ -1,6 +1,7 @@
 package file
 
 import (
+	"fmt"
 	"testing"
 )
 
@@ -17,5 +18,17 @@ func TestCreateFile(t *testing.T) {
 	if string(r) != "hello world" {
 		t.Fatal("write failed")
 	}
+
+}
+
+func TestReadSeek(t *testing.T) {
+	buf, err := ReadSeek("../src/wget", 0, 10)
+	fmt.Println("err:", err)
+	o := buf
+	fmt.Println("output1:", string(o))
+
+	buf, _ = ReadSeek("../src/wget", 100, 10)
+	o = append(o, buf...)
+	fmt.Println("output2:", string(o))
 
 }

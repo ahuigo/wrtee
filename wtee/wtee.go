@@ -6,9 +6,11 @@ import (
 	"io"
 	"net"
 	"os"
+	"time"
 
 	"github.com/ahuigo/glogger"
 	"github.com/ahuigo/wrtee/file"
+	"github.com/ahuigo/wrtee/util"
 )
 
 var logger = glogger.Glogger
@@ -24,7 +26,7 @@ func (c *Client) getConn() net.Conn {
 	if c.conn == nil {
 		c.conn, err = net.Dial("tcp", c.addr)
 		if err != nil {
-			perror("Connect to TCP server failed ,err:", err)
+			util.Fatal("Connect to TCP server failed ,err:", err)
 		}
 	}
 	return c.conn
@@ -33,6 +35,7 @@ func (c *Client) sendPaths() (err error) {
 	for _, path := range c.paths {
 		err = c.sendPath(path)
 		if err != nil {
+			util.Fatal("send path failed:%s,err:%s", path, err)
 			return
 		}
 	}
@@ -46,6 +49,9 @@ func (c *Client) sendPath(path string) (err error) {
 	}
 	return
 }
+
+var offset = 0
+
 func (c *Client) sendFile(filePath string) (err error) {
 	fileReader, _ := c.openFile(filePath)
 	segLenBits := 5
@@ -65,28 +71,47 @@ func (c *Client) sendFile(filePath string) (err error) {
 			return err
 		}
 		if n > 0 {
+			offset += n
+			util.Debugf("send offset:%d", offset)
 			segLen := fmt.Sprintf("%05d:", n)
 			copy(buf, []byte(segLen))
-			c.sendBlob(buf[:n+segLenBits+1])
+			if err = c.sendBlob(buf[:n+segLenBits+1]); err != nil {
+				return err
+			}
+			time.Sleep(1 * time.Microsecond)
 			// fileWriter.Write(buf)
 		} else {
 			break
 		}
 	}
+	c.waitClose()
 	return
 }
 
-func (c *Client) sendBlob(buf []byte) {
-	fmt.Println("sendBlob:", string(buf))
+func (c *Client) sendBlob(buf []byte) error {
 	conn := c.getConn()
 	n, err := conn.Write(buf)
 	if err != nil {
-		perror("Write failed,err:", err)
-	}else{
-        if n!=len(buf){
-            perror("not valid n:", n, "len=",len(buf))
-        }
-    }
+		util.Perror("Write failed,err:", err)
+	} else {
+		if n != len(buf) {
+			util.Perror("not valid n:", n, "len=", len(buf))
+		}
+	}
+	return err
+}
+func (c *Client) waitClose() {
+	conn := c.getConn()
+	buf := make([]byte, 10)
+	_, err := conn.Read(buf)
+	if err != nil {
+		util.Fatal("read err:", err)
+	} else if string(buf) == "CLOSE" {
+		return
+	} else {
+		util.Fatal("not close:", string(buf))
+	}
+	return
 }
 
 func (c *Client) openFile(filePath string) (fileReader io.Reader, err error) {
@@ -94,7 +119,7 @@ func (c *Client) openFile(filePath string) (fileReader io.Reader, err error) {
 		fileReader = os.Stdin
 	} else {
 		if fileReader, err = os.Open(filePath); err != nil {
-			perror("Invalid path: ", filePath, err)
+			util.Perrorf("Invalid path:%s,err:%s ", filePath, err)
 			// os.Exit(1)
 		}
 	}
@@ -121,10 +146,4 @@ func getCliArgs() (args Client) {
 func main() {
 	client := getCliArgs()
 	client.sendPaths()
-}
-
-func perror(args ...interface{}) {
-	// fmt.Println(args...)
-	fmt.Fprintln(os.Stderr, args...)
-	os.Exit(1)
 }
