@@ -34,7 +34,7 @@ func (c *Client) sendPaths() (err error) {
 	for _, path := range c.paths {
 		err = c.sendPath(path)
 		if err != nil {
-			util.Fatal("send path failed:%s,err:%s", path, err)
+			util.Fatalf("send path failed:%s,err:%s", path, err)
 			return
 		}
 	}
@@ -52,7 +52,10 @@ func (c *Client) sendPath(path string) (err error) {
 var offset = 0
 
 func (c *Client) sendFile(filePath string) (err error) {
-	fileReader, _ := c.openFile(filePath)
+	fileReader, err := c.openFile(filePath)
+	if err != nil {
+		return err
+	}
 	segLenBits := 5
 	buf := make([]byte, 2000)
 
@@ -60,6 +63,7 @@ func (c *Client) sendFile(filePath string) (err error) {
 	c.sendBlob([]byte(header))
 	defer func() {
 		c.sendBlob([]byte("END:"))
+		c.waitClose()
 	}()
 	for {
 		n, err := fileReader.Read(buf[segLenBits+1:])
@@ -83,7 +87,6 @@ func (c *Client) sendFile(filePath string) (err error) {
 			break
 		}
 	}
-	c.waitClose()
 	return
 }
 
@@ -94,7 +97,7 @@ func (c *Client) sendBlob(buf []byte) error {
 		util.Perror("Write failed,err:", err)
 	} else {
 		if n != len(buf) {
-			util.Perror("not valid n:", n, "len=", len(buf))
+			util.Fatalf("It didn't send enough bytes %d<%d", n, len(buf))
 		}
 	}
 	return err
@@ -103,15 +106,15 @@ func (c *Client) waitClose() {
 	util.Perror("wait closing...")
 	conn := c.getConn()
 	buf := make([]byte, 10)
-	_, err := conn.Read(buf)
+	n, err := conn.Read(buf)
+	util.Perror("recv closing:", buf[:n])
 	if err != nil {
-		util.Fatal("read err:", err)
-	} else if string(buf) == "CLOSE" {
+		util.Fatal("read server:", err)
+	} else if string(buf[:n]) == "CLOSE" {
 		return
 	} else {
-		util.Fatal("not close:", string(buf))
+		util.Fatal("server didn't response 'CLOSE':", string(buf))
 	}
-	return
 }
 
 func (c *Client) openFile(filePath string) (fileReader io.Reader, err error) {

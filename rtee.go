@@ -1,4 +1,5 @@
 //go:build !rtee
+
 package main
 
 import (
@@ -34,11 +35,12 @@ type RecvFiles struct {
 	force          bool
 	recvOffset     int64
 	recvRealOffset int64
+	conn           net.Conn
 }
 
 type Args struct {
 	Port  string
-	Home  string //output home
+	Home  string // save file at home
 	Force bool
 }
 
@@ -84,7 +86,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 
 var output []byte
 
-func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, isReadMore bool, err error) {
+func (rf *RecvFiles) Read2File(b *[]byte) (finished bool, isReadMore bool, err error) {
 	buf := *b
 	sepIndex := bytes.IndexByte(buf, ':')
 	if sepIndex > 0 {
@@ -107,27 +109,7 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, isReadMore bool, err er
 
 				// ********************debug ***************************
 				if false {
-					bn := int64(len(bytes))
-					oribytes, err := file.ReadSeek("go2", rf.recvOffset, bn)
-					if err != nil {
-						util.Fatalf("seek read err:%s,offset:%d,n:%d", err, rf.recvOffset, bn)
-					}
-					offset := rf.recvOffset
-					if dn := file.BytesDiffn(oribytes, bytes); dn >= 0 {
-						util.Debugf("recv diff at offset:%d,n:%d\n bytes:%v\n oribytes:\n%v", offset, dn, string(bytes), string(oribytes))
-						// util.Debugf("dif2\n bytes:%v\nobytes=%v", bytes, oribytes)
-						os.Exit(1)
-					} else {
-						// util.Debugf("save offset %d(%d):%v", offset+bn, bn, string(bytes))
-						util.Debugf("offset %d ok", offset+bn)
-						// util.Debugf("offset %d ok:\n%s", offset, string(bytes))
-						output = append(output, bytes...)
-						// if len(output) > 3888 {
-						// 	util.Debugf("output(%d):\n%s", offset, string(output))
-						// 	os.Exit(1)
-						// }
-					}
-					rf.recvOffset += bn
+					rf.debugRead2File(bytes)
 				}
 				// ********************debug end***************************
 
@@ -152,6 +134,30 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, isReadMore bool, err er
 	return
 }
 
+func (rf *RecvFiles) debugRead2File(bytes []byte) {
+	byten := int64(len(bytes))
+	oribytes, err := file.ReadSeek("go2", rf.recvOffset, byten)
+	if err != nil {
+		util.Fatalf("seek read err:%s,offset:%d,n:%d", err, rf.recvOffset, byten)
+	}
+	offset := rf.recvOffset
+	if dn := file.BytesDiffn(oribytes, bytes); dn >= 0 {
+		util.Debugf("recv diff at offset:%d,n:%d\n bytes:%v\n oribytes:\n%v", offset, dn, string(bytes), string(oribytes))
+		// util.Debugf("dif2\n bytes:%v\nobytes=%v", bytes, oribytes)
+		os.Exit(1)
+	} else {
+		// util.Debugf("save offset %d(%d):%v", offset+byten, byten, string(bytes))
+		util.Debugf("offset %d ok", offset+byten)
+		// util.Debugf("offset %d ok:\n%s", offset, string(bytes))
+		output = append(output, bytes...)
+		// if len(output) > 3888 {
+		// 	util.Debugf("output(%d):\n%s", offset, string(output))
+		// 	os.Exit(1)
+		// }
+	}
+	rf.recvOffset += byten
+}
+
 /**
  * file:file_path1
  * \n
@@ -162,7 +168,7 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, isReadMore bool, err er
  * length:data
  * EOF:
  */
-func (rf *RecvFiles) Read(b *[]byte) (err error) {
+func (rf *RecvFiles) handleRecvBytes(b *[]byte) (err error) {
 	finished := false
 	isReadMore := false //read more byte(not enough bytes)
 	for {
@@ -178,10 +184,12 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 			}
 		case RfStatusRecv:
 			// util.Debugf("parse file...:%s", string(*b))
-			if finished, isReadMore, err = rf.ReadFile(b); err != nil {
+			if finished, isReadMore, err = rf.Read2File(b); err != nil {
 				return err
 			}
 			if finished {
+				rf.conn.Write([]byte("CLOSE"))
+				util.Debug("close file")
 				rf.status = RfStatusInit
 				rf.recvOffset = 0
 			}
@@ -204,7 +212,6 @@ func recvConn(conn net.Conn, rf *RecvFiles) {
 		conn.Close()
 	}()
 	for {
-		util.Debugf("read bytes...len(buf)=%v", len(buf))
 		n, err := conn.Read(buf[:])
 		if err != nil {
 			if err != io.EOF {
@@ -214,27 +221,23 @@ func recvConn(conn net.Conn, rf *RecvFiles) {
 			}
 			break
 		}
-		// util.Debugf("Recived from client:%s\n",  string(buf[:n]))
 		bytes = append(bytes, buf[:n]...)
-		// util.Debugf("Recived bytes:%s\n", string(bytes))
-		if err = rf.Read(&bytes); err != nil {
+		if err = rf.handleRecvBytes(&bytes); err != nil {
 			util.Perrorf("read err:%+v\n", err)
 			break
 		}
-		// debug ************
 		if true {
-			util.Debugf("real offset1-----------ahui--------:%v(%v) before", rf.recvRealOffset, n)
-			rf.recvRealOffset += int64(n)
-			rn := rf.recvRealOffset
-			util.Debugf("real offset2-----------ahui--------:%v(%v) ok last bytes len:%d", rn, n, len(bytes))
-			if n > 0 {
-				// util.Debugf("%v", string(buf[:n]))
-			}
-			// time.Sleep(1000 * time.Millisecond)
-			// continue
+			rf.debugRecvBytes(buf[:n], bytes)
 		}
-		// debug ahui*************
 	}
+}
+
+func (rf *RecvFiles) debugRecvBytes(buf, bytes []byte) {
+	n := len(buf)
+	rf.recvRealOffset += int64(n)
+	rn := rf.recvRealOffset
+	util.Debugf("new bytes:%v,real recv offset:%v, unhandled bytes:%d", n, rn, len(bytes))
+	// time.Sleep(30 * time.Millisecond)
 }
 
 func main() {
@@ -243,7 +246,7 @@ func main() {
 	listener, err := net.Listen("tcp", "0.0.0.0:"+args.Port)
 	if err != nil {
 		fmt.Println("Listen tcp server failed,err:", err)
-		return
+		os.Exit(1)
 	}
 	fmt.Println("Listen port:", args.Port)
 	fmt.Println("Home:", args.Home)
@@ -261,6 +264,7 @@ func main() {
 			status: RfStatusInit,
 			home:   args.Home,
 			force:  args.Force,
+			conn:   conn,
 		}
 		go recvConn(conn, rf)
 	}
