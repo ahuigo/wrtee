@@ -6,7 +6,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"time"
 
 	"github.com/ahuigo/glogger"
 	"github.com/ahuigo/wrtee/file"
@@ -78,7 +77,7 @@ func (c *Client) sendFile(filePath string) (err error) {
 			if err = c.sendBlob(buf[:n+segLenBits+1]); err != nil {
 				return err
 			}
-			time.Sleep(1 * time.Microsecond)
+			// time.Sleep(1 * time.Microsecond)
 			// fileWriter.Write(buf)
 		} else {
 			break

@@ -28,11 +28,12 @@ const (
 type RecvFiles struct {
 	// RfStatusInit: check header ; parse header+ create file
 	// RfStatusRecv: recv data ; EOF: close file + init
-	status     RfStatus
-	fp         *os.File
-	home       string
-	force      bool
-	recvOffset int64
+	status         RfStatus
+	fp             *os.File
+	home           string
+	force          bool
+	recvOffset     int64
+	recvRealOffset int64
 }
 
 type Args struct {
@@ -83,7 +84,7 @@ func (rf *RecvFiles) ReadHeader(b *[]byte) (finished bool, err error) {
 
 var output []byte
 
-func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err error) {
+func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, isReadMore bool, err error) {
 	buf := *b
 	sepIndex := bytes.IndexByte(buf, ':')
 	if sepIndex > 0 {
@@ -94,7 +95,7 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err erro
 			*b = (*b)[sepIndex+1:]
 			rf.fp.Close()
 			finished = true
-			return finished, false, nil
+			return finished, isReadMore, nil
 		} else if err == nil && segLen > 0 {
 			finished = false
 			// write line
@@ -105,41 +106,44 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err erro
 				*b = (*b)[sepIndex+1+segLen:]
 
 				// ********************debug ***************************
-				bn := int64(len(bytes))
-				oribytes, err := file.ReadSeek("tmp/wget", rf.recvOffset, bn)
-				if err != nil {
-					util.Fatalf("seek read err:%s,offset:%d,n:%d", err, rf.recvOffset, bn)
+				if false {
+					bn := int64(len(bytes))
+					oribytes, err := file.ReadSeek("go2", rf.recvOffset, bn)
+					if err != nil {
+						util.Fatalf("seek read err:%s,offset:%d,n:%d", err, rf.recvOffset, bn)
+					}
+					offset := rf.recvOffset
+					if dn := file.BytesDiffn(oribytes, bytes); dn >= 0 {
+						util.Debugf("recv diff at offset:%d,n:%d\n bytes:%v\n oribytes:\n%v", offset, dn, string(bytes), string(oribytes))
+						// util.Debugf("dif2\n bytes:%v\nobytes=%v", bytes, oribytes)
+						os.Exit(1)
+					} else {
+						// util.Debugf("save offset %d(%d):%v", offset+bn, bn, string(bytes))
+						util.Debugf("offset %d ok", offset+bn)
+						// util.Debugf("offset %d ok:\n%s", offset, string(bytes))
+						output = append(output, bytes...)
+						// if len(output) > 3888 {
+						// 	util.Debugf("output(%d):\n%s", offset, string(output))
+						// 	os.Exit(1)
+						// }
+					}
+					rf.recvOffset += bn
 				}
-				offset := rf.recvOffset
-				if dn := file.BytesDiffn(oribytes, bytes); dn >= 0 {
-					util.Debugf("recv diff at offset:%d,n:%d\n bytes:%v\n oribytes:\n%v", offset, dn, string(bytes), string(oribytes))
-					// util.Debugf("dif2\n bytes:%v\nobytes=%v", bytes, oribytes)
-					os.Exit(1)
-				} else {
-					util.Debugf("offset %d ok", offset+bn)
-					// util.Debugf("offset %d ok:\n%s", offset, string(bytes))
-					output = append(output, bytes...)
-					// if len(output) > 3888 {
-					// 	util.Debugf("output(%d):\n%s", offset, string(output))
-					// 	os.Exit(1)
-					// }
-				}
-				rf.recvOffset += bn
 				// ********************debug end***************************
 
-				return finished, false, err
+				return finished, isReadMore, err
 			} else {
 				// block line
-				readNext = true
-				return finished, true, nil
+				isReadMore = true
+				return finished, isReadMore, nil
 			}
 		} else {
 			// bad seg length
-			return finished, readNext, errors.New("bad body segName:" + segName)
+			return finished, isReadMore, errors.New("bad body segName:" + segName)
 		}
 
 	} else {
-		readNext = true
+		isReadMore = true
 		if len(buf) > 10 { // len(number_len|END:)<10
 			return false, false, errors.New("bad body seg:" + string(buf))
 
@@ -160,7 +164,7 @@ func (rf *RecvFiles) ReadFile(b *[]byte) (finished bool, readNext bool, err erro
  */
 func (rf *RecvFiles) Read(b *[]byte) (err error) {
 	finished := false
-	readNext := false //read more byte(not enough bytes)
+	isReadMore := false //read more byte(not enough bytes)
 	for {
 		switch rf.status {
 		case RfStatusInit:
@@ -170,23 +174,21 @@ func (rf *RecvFiles) Read(b *[]byte) (err error) {
 			if finished {
 				rf.status = RfStatusRecv
 			} else {
-				readNext = true
+				isReadMore = true
 			}
 		case RfStatusRecv:
 			// util.Debugf("parse file...:%s", string(*b))
-			if finished, readNext, err = rf.ReadFile(b); err != nil {
+			if finished, isReadMore, err = rf.ReadFile(b); err != nil {
 				return err
 			}
 			if finished {
 				rf.status = RfStatusInit
 				rf.recvOffset = 0
-			} else {
-				readNext = true
 			}
 		default:
 			return errors.New("undefined recv file status")
 		}
-		if readNext {
+		if isReadMore {
 			break
 		}
 
@@ -202,9 +204,8 @@ func recvConn(conn net.Conn, rf *RecvFiles) {
 		conn.Close()
 	}()
 	for {
-		util.Debugf("read bytes...")
+		util.Debugf("read bytes...len(buf)=%v", len(buf))
 		n, err := conn.Read(buf[:])
-		util.Debugf("read bytes:n=%d", n)
 		if err != nil {
 			if err != io.EOF {
 				fmt.Println("Read from tcp server failed,err:", err)
@@ -220,6 +221,19 @@ func recvConn(conn net.Conn, rf *RecvFiles) {
 			util.Perrorf("read err:%+v\n", err)
 			break
 		}
+		// debug ************
+		if true {
+			util.Debugf("real offset1-----------ahui--------:%v(%v) before", rf.recvRealOffset, n)
+			rf.recvRealOffset += int64(n)
+			rn := rf.recvRealOffset
+			util.Debugf("real offset2-----------ahui--------:%v(%v) ok last bytes len:%d", rn, n, len(bytes))
+			if n > 0 {
+				// util.Debugf("%v", string(buf[:n]))
+			}
+			// time.Sleep(1000 * time.Millisecond)
+			// continue
+		}
+		// debug ahui*************
 	}
 }
 
